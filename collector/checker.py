@@ -270,6 +270,251 @@ body{font:15px/1.6 'Segoe UI','Malgun Gothic',sans-serif;background:#f3f6fa;colo
 <input id="search" placeholder="프로필·계정·리전·리소스 검색" aria-label="결과 검색">''' + f'<div class="cards">{cards}</div>{sections}<details><summary>실행 정보</summary><pre>{metadata}</pre></details>' + '''<script>document.getElementById('search').addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('tbody tr').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(q))})</script></html>'''
 
 
+def inventory_fields(service, data):
+    """Return short, typed service attributes; never stringify the raw payload."""
+    def get(path):
+        value = data
+        for part in path.split('.'):
+            if not isinstance(value, dict):
+                return None
+            value = value.get(part)
+        return value
+
+    def flag(path):
+        value = get(path)
+        return '사용' if value is True else '미사용' if value is False else '미확인'
+
+    def joined(path, key):
+        return ', '.join(str(x.get(key, '')) for x in (get(path) or []) if isinstance(x, dict) and x.get(key)) or '—'
+
+    fields = {
+        'EC2': [('상태', get('State.Name')), ('인스턴스 타입', get('InstanceType')),
+                ('가용 영역', get('Placement.AvailabilityZone')), ('사설 IP', get('PrivateIpAddress')),
+                ('공인 IP', get('PublicIpAddress')), ('VPC', get('VpcId')), ('서브넷', get('SubnetId'))],
+        'EBS': [('상태', get('State')), ('볼륨 타입', get('VolumeType')), ('용량 (GiB)', get('Size')),
+                ('암호화', flag('Encrypted')), ('연결 인스턴스', joined('Attachments', 'InstanceId'))],
+        'EIP': [('공인 IP', get('PublicIp')), ('사설 IP', get('PrivateIpAddress')),
+                ('연결 ID', get('AssociationId')), ('인스턴스', get('InstanceId'))],
+        'RDS': [('상태', get('DBInstanceStatus')), ('엔진', get('Engine')), ('버전', get('EngineVersion')),
+                ('DB 클래스', get('DBInstanceClass')), ('용량 (GiB)', get('AllocatedStorage')),
+                ('Multi-AZ', flag('MultiAZ')), ('암호화', flag('StorageEncrypted')),
+                ('삭제 방지', flag('DeletionProtection'))],
+        'Aurora': [('상태', get('Status')), ('엔진', get('Engine')), ('버전', get('EngineVersion')),
+                   ('엔진 모드', get('EngineMode')), ('멤버 수', len(get('DBClusterMembers')) if isinstance(get('DBClusterMembers'), list) else None),
+                   ('암호화', flag('StorageEncrypted')), ('삭제 방지', flag('DeletionProtection'))],
+        'VPC': [('상태', get('State')), ('CIDR', get('CidrBlock')), ('기본 VPC', flag('IsDefault'))],
+        'Subnet': [('상태', get('State')), ('CIDR', get('CidrBlock')), ('가용 영역', get('AvailabilityZone')),
+                   ('사용 가능 IP 수', get('AvailableIpAddressCount')), ('VPC', get('VpcId'))],
+        'RouteTable': [('VPC', get('VpcId')), ('라우트 수', len(get('Routes')) if isinstance(get('Routes'), list) else None)],
+        'SecurityGroup': [('그룹 이름', get('GroupName')), ('VPC', get('VpcId')),
+                          ('인바운드 규칙 수', len(get('IpPermissions')) if isinstance(get('IpPermissions'), list) else None),
+                          ('아웃바운드 규칙 수', len(get('IpPermissionsEgress')) if isinstance(get('IpPermissionsEgress'), list) else None)],
+        'NAT': [('상태', get('State')), ('연결 유형', get('ConnectivityType')), ('VPC', get('VpcId')),
+                ('서브넷', get('SubnetId')), ('공인 IP', joined('NatGatewayAddresses', 'PublicIp'))],
+        'VPN': [('상태', get('State')), ('유형', get('Type')), ('VGW', get('VpnGatewayId')),
+                ('TGW', get('TransitGatewayId')), ('고객 게이트웨이', get('CustomerGatewayId'))],
+        'TGW': [('상태', get('State')), ('Amazon ASN', get('Options.AmazonSideAsn'))],
+        'TGWAttachment': [('상태', get('State')), ('리소스 유형', get('ResourceType')),
+                          ('연결 리소스', get('ResourceId')), ('TGW', get('TransitGatewayId'))],
+        'ELBv2': [('상태', get('State.Code')), ('유형', get('Type')), ('공개 범위', get('Scheme')),
+                  ('DNS', get('DNSName')), ('VPC', get('VpcId'))],
+        'Lambda': [('상태', get('State')), ('런타임', get('Runtime')), ('메모리 (MB)', get('MemorySize')),
+                   ('타임아웃 (초)', get('Timeout')), ('최종 수정', get('LastModified'))],
+        'S3': [('퍼블릭 차단', '모두 설정' if isinstance(get('PublicAccessBlock'), dict) and all(get('PublicAccessBlock').get(k) is True for k in ('BlockPublicAcls', 'IgnorePublicAcls', 'BlockPublicPolicy', 'RestrictPublicBuckets')) else '일부 미설정' if isinstance(get('PublicAccessBlock'), dict) else '미확인')],
+        'IAM': [('사용자 수', get('Users')), ('역할 수', get('Roles')), ('그룹 수', get('Groups')),
+                ('루트 MFA', '활성' if get('AccountMFAEnabled') == 1 else '미활성/제거 여부 확인' if get('AccountMFAEnabled') == 0 else '미확인')],
+        'EKS': [('수집 범위', '클러스터 목록')],
+        'ECS': [('수집 범위', '클러스터 목록')],
+    }
+    return fields.get(service, [])
+
+
+def excel_report(report, path):
+    """Visual Excel export for the existing Python/CloudShell application."""
+    import xlsxwriter
+    resources, findings, coverage = (report[k] for k in ('resources', 'findings', 'coverage'))
+    groups = {}
+    for row in resources:
+        groups.setdefault(row['service'], []).append(row)
+    requested = set(report.get('requested_services', [])) | set(groups)
+    requested.update(x['service'] for x in coverage if x['service'] not in ('STS', 'Regions'))
+    services = sorted(requested, key=lambda s: (-len(groups.get(s, [])), s))
+    per_service = Counter(x['service'] for x in findings)
+    per_resource = Counter((x.get('profile'), x.get('account'), x.get('region'), x.get('service'), x.get('id')) for x in findings)
+    failures = [x for x in coverage if x['status'] != 'OK']
+
+    def state(service):
+        queries = [x for x in coverage if x['service'] == service]
+        if not queries:
+            return '미조회'
+        if any(x['status'] != 'OK' for x in queries):
+            return '부분 실패' if any(x['status'] == 'OK' for x in queries) or groups.get(service) else '조회 실패'
+        return '조회 완료'
+
+    with xlsxwriter.Workbook(str(path), {'strings_to_formulas': False, 'strings_to_urls': False}) as book:
+        base = {'font_name': 'Malgun Gothic', 'font_size': 10, 'font_color': '#24364B', 'valign': 'vcenter'}
+        body = book.add_format(base)
+        number = book.add_format(base | {'num_format': '#,##0'})
+        title = book.add_format(base | {'font_size': 16, 'bold': True})
+        note = book.add_format(base | {'font_color': '#63758B'})
+        heading = book.add_format(base | {'bg_color': '#203B60', 'font_color': '#FFFFFF', 'bold': True, 'align': 'center', 'text_wrap': True})
+        link = book.add_format(base | {'font_color': '#2463C9', 'underline': 1})
+        warning = book.add_format(base | {'bg_color': '#FFF3DF', 'font_color': '#9C5700'})
+        danger = book.add_format(base | {'bg_color': '#FDE9E7', 'font_color': '#A62D26', 'bold': True})
+        good = book.add_format(base | {'bg_color': '#EAF5F1', 'font_color': '#236C58'})
+        summary = book.add_worksheet('Summary')
+        summary.set_tab_color('#203B60')
+        used_names = {'summary', 'findings', 'coverage', 'inventory'}
+        service_sheets = {}
+        import re
+        for index, service in enumerate(services):
+            name = re.sub(r"[\[\]:*?/\\']", '_', service)[:31] or f'Service{index+1}'
+            if name.lower() in used_names:
+                name = f'Service{index+1}'
+            used_names.add(name.lower())
+            service_sheets[service] = book.add_worksheet(name)
+        find_sheet = book.add_worksheet('Findings')
+        cover_sheet = book.add_worksheet('Coverage')
+        inventory = book.add_worksheet('Inventory')
+
+        def setup(sheet, subtitle, width=24):
+            sheet.hide_gridlines(2)
+            sheet.set_default_row(24)
+            sheet.set_column(0, 16, width, body)
+            sheet.set_landscape()
+            sheet.fit_to_pages(1, 0)
+            sheet.set_paper(9)
+            sheet.write_string(1, 0, subtitle, title)
+            sheet.set_row(1, 32)
+            sheet.set_footer('&L AWS Resource Checker &R &P / &N')
+            sheet.write_url(3, 0, "internal:'Summary'!A1", link, '요약으로 돌아가기')
+
+        def write_table(sheet, headers, rows, table_name):
+            sheet.set_row(6, 32)
+            if rows:
+                sheet.add_table(6, 0, 6 + len(rows), len(headers)-1, {
+                    'name': table_name, 'style': 'Table Style Medium 2',
+                    'columns': [{'header': h, 'header_format': heading} for h in headers], 'data': rows})
+            else:
+                for col, h in enumerate(headers):
+                    sheet.write_string(6, col, h, heading)
+                sheet.write_string(7, 0, '수집된 항목 없음. Summary와 Coverage에서 조회 범위를 확인하세요.', note)
+            sheet.freeze_panes(7, min(3, len(headers)))
+            sheet.repeat_rows(6)
+            sheet.print_area(0, 0, max(8, 6+len(rows)), len(headers)-1)
+
+        setup(summary, 'AWS 리소스 현황')
+        summary.write_string(3, 0, f"{report['started_at']}   {report['mode']}   상태: {report['status']}", note)
+        summary.set_column('A:A', 23)
+        summary.set_column('B:D', 13)
+        summary.set_column('E:E', 16)
+        summary.set_column('F:F', 18)
+        summary.set_column('G:G', 3)
+        summary.set_column('H:N', 11)
+        labels = ['수집 리소스', '점검 후보', '실패·부분 조회', '조회 계정']
+        counts = [len(resources), len(findings), len(failures), len({x.get('account') for x in resources+coverage if x.get('account')})]
+        for col, label, value in zip((0, 4, 8, 11), labels, counts):
+            cardlabel = book.add_format(base | {'font_color': '#63758B', 'bg_color': '#F0F4FA'})
+            cardvalue = book.add_format(base | {'font_size': 16, 'bold': True, 'bg_color': '#F0F4FA', 'num_format': '#,##0'})
+            summary.merge_range(5, col, 5, col+2, label, cardlabel)
+            summary.merge_range(6, col, 7, col+2, value, cardvalue)
+        summary.merge_range('A10:N10', '집계 단위는 수집 항목입니다. EKS/ECS는 클러스터 목록, IAM은 계정 요약입니다. 조회 실패·미조회는 리소스 없음으로 판단하지 않습니다.', note)
+        summary.set_row(9, 25)
+        headers = ['서비스', '리소스 수', '점검 후보', '실패 조회', '조회 상태', '리소스 목록']
+        for col,h in enumerate(headers):
+            summary.write_string(11,col,h,heading)
+        summary.set_row(11,30)
+        for rownum,service in enumerate(services,12):
+            sheet=service_sheets[service]
+            summary.write_string(rownum,0,service,body)
+            summary.write_number(rownum,1,len(groups.get(service,[])),number)
+            summary.write_number(rownum,2,per_service[service],number)
+            summary.write_number(rownum,3,sum(x['service']==service for x in failures),number)
+            summary.write_string(rownum,4,state(service),body)
+            summary.write_url(rownum,5,f"internal:'{sheet.name}'!A1",link,'목록 열기')
+        if services:
+            end=11+len(services)
+            summary.conditional_format(12,1,end,1,{'type':'data_bar','bar_color':'#4D83C8'})
+            for col in (2,3):
+                summary.conditional_format(12,col,end,col,{'type':'cell','criteria':'>','value':0,'format':warning})
+            for text,fmt in [('조회 실패',danger),('부분 실패',warning),('미조회',warning)]:
+                summary.conditional_format(12,4,end,4,{'type':'text','criteria':'containing','value':text,'format':fmt})
+        chart_rows = [i for i,s in enumerate(services) if groups.get(s)][:12]
+        if chart_rows:
+            chart=book.add_chart({'type':'bar'})
+            last=12+len(chart_rows)-1
+            chart.add_series({'name':'리소스 수','categories':['Summary',12,0,last,0],
+                              'values':['Summary',12,1,last,1],'fill':{'color':'#3A76C5'},
+                              'border':{'none':True},'data_labels':{'value':True,'font':{'name':'Malgun Gothic','size':10}}})
+            chart.set_title({'name':'서비스별 리소스 수 (상위 12개)','name_font':{'name':'Malgun Gothic','size':12}})
+            chart.set_legend({'none':True})
+            chart.set_x_axis({'min':0,'num_format':'0','name_font':{'name':'Malgun Gothic'},'num_font':{'name':'Malgun Gothic','size':10}})
+            chart.set_y_axis({'reverse':True,'num_font':{'name':'Malgun Gothic','size':10}})
+            chart.set_size({'width':580,'height':390})
+            chart.set_chartarea({'border':{'none':True}})
+            summary.insert_chart('H12',chart)
+        else:
+            summary.write_string(12,7,'수집된 리소스가 없습니다. Coverage에서 오류를 확인하세요.',note)
+        summary.freeze_panes(12,1)
+        summary.print_area(0,0,max(33,13+len(services)),13)
+        summary.write_url(max(33,14+len(services)),0,"internal:'Coverage'!A1",link,'조회 범위·오류 확인')
+        summary.write_url(max(33,14+len(services)),4,"internal:'Findings'!A1",link,'점검 후보 확인')
+
+        common=['AWS 계정','리전','리소스 ID','이름','점검 후보 수']
+        for index,service in enumerate(services):
+            sheet=service_sheets[service]
+            rows=groups.get(service,[])
+            setup(sheet,f'{service} 리소스 목록')
+            sheet.write_string(4,0,f'수집 {len(rows):,}개 / 점검 후보 {per_service[service]:,}건 / {state(service)}',note)
+            extra=inventory_fields(service,{})
+            values=[]
+            for row in rows:
+                identity=tuple(row.get(k) for k in ('profile','account','region','service','id'))
+                values.append([row.get('account',''),row.get('region',''),row.get('id',''),row.get('name',''),per_resource[identity]]+
+                              [v if v is not None else '미확인' for _,v in inventory_fields(service,row.get('details') or {})])
+            write_table(sheet,common+[h for h,_ in extra],values,f'ServiceTable{index+1}')
+            sheet.set_column(0,0,17,body)
+            sheet.set_column(1,1,20,body)
+            sheet.set_column(2,2,44,body)
+            sheet.set_column(3,3,30,body)
+            sheet.set_column(4,4,15,number)
+            for col,(label,_) in enumerate(extra,5):
+                sheet.set_column(col,col,28 if label in ('인스턴스 타입','DB 클래스','가용 영역','연결 인스턴스') else 23,body)
+            if rows:
+                sheet.conditional_format(7,4,6+len(rows),4,{'type':'cell','criteria':'>','value':0,'format':warning})
+                if extra and extra[0][0]=='상태':
+                    for status in ('running','available','active','in-use'):
+                        sheet.conditional_format(7,5,6+len(rows),5,{'type':'cell','criteria':'equal to','value':f'"{status}"','format':good})
+                    for status in ('stopped','failed','error'):
+                        sheet.conditional_format(7,5,6+len(rows),5,{'type':'cell','criteria':'equal to','value':f'"{status}"','format':warning})
+
+        specs=[
+            (find_sheet,'점검 후보',['중요도','서비스','AWS 계정','리전','리소스 ID','점검 내용','확인할 사항','근거'],
+             [[x.get(k,'') for k in ('severity','service','account','region','id','message','action','evidence')] for x in findings],'FindingsTable'),
+            (cover_sheet,'조회 범위와 오류',['조회 상태','서비스','AWS 계정','리전','조회 API','수집 수','오류 코드'],
+             [[x.get(k,'') for k in ('status','service','account','region','operation','count','error')] for x in coverage],'CoverageTable'),
+            (inventory,'전체 리소스 목록',['서비스','AWS 계정','리전','리소스 ID','이름'],
+             [[x.get(k,'') for k in ('service','account','region','id','name')] for x in resources],'InventoryTable')]
+        for sheet,label,headers,rows,name in specs:
+            setup(sheet,label)
+            values=[[stringify(v)[:32767] if isinstance(v,(dict,list)) else v for v in row] for row in rows]
+            write_table(sheet,headers,values,name)
+            sheet.set_column(0,0,20,body)
+            sheet.set_column(1,3,22,body)
+            sheet.set_column(4,len(headers)-1,40,body)
+            if sheet==find_sheet and rows:
+                sheet.set_column(5,7,50,book.add_format(base|{'text_wrap':True,'valign':'top'}))
+                for rownum in range(7,7+len(rows)):
+                    sheet.set_row(rownum,48)
+                for severity,fmt in [('HIGH',danger),('MEDIUM',warning),('REVIEW',warning)]:
+                    sheet.conditional_format(7,0,6+len(rows),0,{'type':'text','criteria':'containing','value':severity,'format':fmt})
+            if sheet==cover_sheet and rows:
+                for status,fmt in [('ERROR',danger),('PARTIAL',warning)]:
+                    sheet.conditional_format(7,0,6+len(rows),0,{'type':'text','criteria':'containing','value':status,'format':fmt})
+        summary.activate()
+        summary.set_first_sheet()
+
+
 def export_report(report, out):
     out = Path(out).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -278,32 +523,7 @@ def export_report(report, out):
     (folder / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
     (folder / 'report.html').write_text(html_report(report), encoding='utf-8')
     try:
-        import xlsxwriter
-        with xlsxwriter.Workbook(str(folder / 'report.xlsx'), {'strings_to_formulas': False, 'strings_to_urls': False}) as book:
-            header = book.add_format({'bold': True, 'bg_color': '#DFEAF8', 'border': 1})
-            wrap = book.add_format({'text_wrap': True, 'valign': 'top'})
-            groups = [('Summary', [dict(metric=k, value=v) for k, v in {
-                'mode': report['mode'], 'status': report['status'], 'resources': len(report['resources']),
-                'findings': len(report['findings']), 'failed_queries': sum(x['status'] != 'OK' for x in report['coverage']),
-                'started_at': report['started_at'], 'scope': stringify(report.get('requested_services', []))}.items()], ['metric', 'value']),
-                ('Findings', report['findings'], ['severity', 'profile', 'account', 'region', 'service', 'id', 'rule', 'message', 'action', 'evidence']),
-                ('Coverage', report['coverage'], ['profile', 'account', 'region', 'service', 'operation', 'status', 'count', 'error']),
-                ('Inventory', report['resources'], ['profile', 'account', 'region', 'service', 'id', 'name'])]
-            for name, rows, columns in groups:
-                sheet = book.add_worksheet(name)
-                sheet.freeze_panes(1, 0)
-                sheet.set_column(0, len(columns)-1, 22, wrap)
-                sheet.set_column(len(columns)-1, len(columns)-1, 70, wrap)
-                for col, key in enumerate(columns):
-                    sheet.write_string(0, col, key, header)
-                for idx, row in enumerate(rows, 1):
-                    for col, key in enumerate(columns):
-                        value = row.get(key, '')
-                        if isinstance(value, (int, float)) and not isinstance(value, bool):
-                            sheet.write_number(idx, col, value)
-                        else:
-                            sheet.write_string(idx, col, stringify(value)[:32767])
-                sheet.autofilter(0, 0, len(rows), len(columns)-1)
+        excel_report(report, folder / 'report.xlsx')
     except ImportError:
         print('Excel 출력 생략: xlsxwriter를 설치하세요. HTML·JSON은 저장되었습니다.')
     return folder
