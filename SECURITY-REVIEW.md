@@ -12,7 +12,7 @@ AWS 키, GitHub 토큰, JWT, 개인키, 서명 URL, 이메일 패턴 없음. 12�
 
 Python 21개 및 브라우저 모델 6개 테스트 통과. CloudShell 실제 계정 조회는 미검증이며 데모 ZIP 생성, 계정 불일치 중단, 명령어 문법·입력 검증을 확인했습니다.
 
-index.html SHA256: `59a0b12eb7f700a68942c3a20f55475f0cc5cfc4de15609530ee1759e9dbf0a7`
+index.html SHA256: `5fc84af7b05661dc40165cba37266cd5b0b6461e655d1fc3b3c2a00120a73b90`
 
 사용자가 2026-10-22에 수집 코드 2개 공개 및 배포를 명시적으로 승인했습니다.
 
