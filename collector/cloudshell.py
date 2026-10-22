@@ -33,10 +33,16 @@ def main():
         report = checker.demo()
     else:
         import boto3
-        # Ignore named-profile selectors; use credentials forwarded by CloudShell.
-        os.environ.pop('AWS_PROFILE', None)
-        os.environ.pop('AWS_DEFAULT_PROFILE', None)
-        session = boto3.Session()
+        # Scope changes to this process. Keep CloudShell's credential-forwarding
+        # variables intact; do not read legacy keys, profiles or web identity.
+        for name in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY',
+                     'AWS_SESSION_TOKEN', 'AWS_SECURITY_TOKEN', 'AWS_PROFILE',
+                     'AWS_DEFAULT_PROFILE', 'AWS_ROLE_ARN',
+                     'AWS_WEB_IDENTITY_TOKEN_FILE'):
+            os.environ.pop(name, None)
+        os.environ['AWS_SHARED_CREDENTIALS_FILE'] = os.devnull
+        os.environ['AWS_CONFIG_FILE'] = os.devnull
+        session = boto3.Session(region_name='ap-northeast-2')
         identity = session.client('sts').get_caller_identity()
         print('\n조회 대상 AWS 계정:', identity['Account'])
         print('현재 로그인 역할:', identity['Arn'])
