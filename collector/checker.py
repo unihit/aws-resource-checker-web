@@ -261,7 +261,7 @@ def html_report(report):
     cards = ''.join(f'<div class="card"><b>{html.escape(k)}</b><strong>{v}</strong></div>' for k, v in sorted(counts.items()))
     sections = table('점검 후보', report['findings'], ['severity', 'profile', 'account', 'region', 'service', 'id', 'message', 'action', 'evidence'])
     sections += table('조회 범위와 오류', report['coverage'], ['profile', 'account', 'region', 'service', 'operation', 'status', 'count', 'error'])
-    sections += table('리소스 목록', report['resources'], ['profile', 'account', 'region', 'service', 'id', 'name', 'details'])
+    sections += table('리소스 목록', report['resources'], ['profile', 'account', 'region', 'service', 'id', 'name'])
     metadata = html.escape(stringify({k: v for k, v in report.items() if k not in ('resources', 'findings', 'coverage')}))
     return '''<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SA AWS Resource Checker</title><style>
@@ -288,7 +288,7 @@ def export_report(report, out):
                 'started_at': report['started_at'], 'scope': stringify(report.get('requested_services', []))}.items()], ['metric', 'value']),
                 ('Findings', report['findings'], ['severity', 'profile', 'account', 'region', 'service', 'id', 'rule', 'message', 'action', 'evidence']),
                 ('Coverage', report['coverage'], ['profile', 'account', 'region', 'service', 'operation', 'status', 'count', 'error']),
-                ('Inventory', report['resources'], ['profile', 'account', 'region', 'service', 'id', 'name', 'details'])]
+                ('Inventory', report['resources'], ['profile', 'account', 'region', 'service', 'id', 'name'])]
             for name, rows, columns in groups:
                 sheet = book.add_worksheet(name)
                 sheet.freeze_panes(1, 0)
