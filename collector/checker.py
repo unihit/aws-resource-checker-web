@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import sys
 import uuid
+import war
 
 VERSION = '0.1.0'
 # service, operation, result path, identifier
@@ -253,6 +254,7 @@ def stringify(value):
 
 
 def html_report(report):
+    war_result = report.get('war') or war.evaluate(report)
     def table(title, rows, columns):
         head = ''.join(f'<th>{html.escape(c)}</th>' for c in columns)
         body = ''.join('<tr>' + ''.join(f'<td>{html.escape(stringify(r.get(c, "")))}</td>' for c in columns) + '</tr>' for r in rows)
@@ -262,7 +264,9 @@ def html_report(report):
     sections = table('점검 후보', report['findings'], ['severity', 'profile', 'account', 'region', 'service', 'id', 'message', 'action', 'evidence'])
     sections += table('조회 범위와 오류', report['coverage'], ['profile', 'account', 'region', 'service', 'operation', 'status', 'count', 'error'])
     sections += table('리소스 목록', report['resources'], ['profile', 'account', 'region', 'service', 'id', 'name'])
-    metadata = html.escape(stringify({k: v for k, v in report.items() if k not in ('resources', 'findings', 'coverage')}))
+    sections += '<section><h2>WAR 사전 진단</h2><p>기존 수집 증빙만 평가합니다. 공식 WAR/HRI 판정이 아니며 UNKNOWN·MANUAL은 후속 확인이 필요합니다.</p><p>' + html.escape(stringify(war_result['counts'])) + '</p></section>'
+    sections += table('WAR 상세', war_result['findings'], ['pillar_name', 'rule', 'title', 'severity', 'status', 'account', 'region', 'id', 'evidence', 'recommendation'])
+    metadata = html.escape(stringify({k: v for k, v in report.items() if k not in ('resources', 'findings', 'coverage', 'war')}))
     return '''<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SA AWS Resource Checker</title><style>
 body{font:15px/1.6 'Segoe UI','Malgun Gothic',sans-serif;background:#f3f6fa;color:#18283e;margin:32px}h1{margin-bottom:0}h2{font-size:20px}.sub{color:#516174}.cards{display:flex;gap:12px;flex-wrap:wrap;margin:22px 0}.card,section{background:white;border:1px solid #dbe3ed;border-radius:12px;padding:18px}.card{min-width:100px}.card strong{display:block;font-size:28px;color:#1759ad}section{margin:20px 0}.scroll{overflow:auto;max-height:650px}table{border-collapse:collapse;width:100%;font-size:13px}th{background:#e9f0fa;text-align:left;position:sticky;top:0}td,th{padding:10px;border-bottom:1px solid #e1e7ef;vertical-align:top}td{min-width:95px;max-width:430px;overflow-wrap:anywhere;white-space:pre-wrap}input{width:min(600px,90%);padding:12px;border:1px solid #b6c6d9;border-radius:8px}details{margin-top:20px}pre{white-space:pre-wrap}.status{font-weight:700;color:#9b4500}
@@ -333,6 +337,7 @@ def excel_report(report, path):
     """Visual Excel export for the existing Python/CloudShell application."""
     import xlsxwriter
     resources, findings, coverage = (report[k] for k in ('resources', 'findings', 'coverage'))
+    war_result = report.get('war') or war.evaluate(report)
     groups = {}
     for row in resources:
         groups.setdefault(row['service'], []).append(row)
@@ -364,7 +369,7 @@ def excel_report(report, path):
         good = book.add_format(base | {'bg_color': '#EAF5F1', 'font_color': '#236C58'})
         summary = book.add_worksheet('Summary')
         summary.set_tab_color('#203B60')
-        used_names = {'summary', 'findings', 'coverage', 'inventory'}
+        used_names = {'summary', 'findings', 'coverage', 'inventory', 'war summary', 'war findings', 'war manual'}
         service_sheets = {}
         import re
         for index, service in enumerate(services):
@@ -511,11 +516,59 @@ def excel_report(report, path):
             if sheet==cover_sheet and rows:
                 for status,fmt in [('ERROR',danger),('PARTIAL',warning)]:
                     sheet.conditional_format(7,0,6+len(rows),0,{'type':'text','criteria':'containing','value':status,'format':fmt})
+        # Additive sheets only: existing service sheets, charts, navigation and data stay intact.
+        war_summary = book.add_worksheet('WAR Summary')
+        war_findings = book.add_worksheet('WAR Findings')
+        war_manual = book.add_worksheet('WAR Manual')
+        for sheet in (war_summary, war_findings, war_manual):
+            setup(sheet, sheet.name)
+            sheet.set_tab_color('#3F5D83')
+            sheet.write_string(4, 0, '규칙 ' + war_result['ruleset_version'] + ' / 기존 수집 증빙만 평가 / 공식 WAR·HRI 판정 아님', note)
+        summary.write_url(max(35, 16+len(services)), 0, "internal:'WAR Summary'!A1", link, 'WAR 진단 요약')
+        counts = [[code, label] + [sum(f['pillar'] == code and f['status'] == status for f in war_result['findings']) for status in war.STATUSES]
+                  for code, label in war.PILLARS.items()]
+        write_table(war_summary, ['Pillar', '이름'] + list(war.STATUSES), counts, 'WARSummaryTable')
+        war_summary.set_column(0, 0, 12, body)
+        war_summary.set_column(1, 1, 30, body)
+        war_summary.set_column(2, 7, 20, number)
+        for i, text in enumerate(war_result['limitations'], 16):
+            war_summary.write_string(i, 0, text, note)
+        wrap = book.add_format(base | {'text_wrap': True, 'valign': 'top'})
+        for sheet, selected, name in (
+                (war_findings, war_result['findings'], 'WARFindingsTable'),
+                (war_manual, [f for f in war_result['findings'] if f['status'] in ('UNKNOWN','MANUAL')], 'WARManualTable')):
+            headers = ['Pillar','규칙','검사','심각도','상태','AWS 계정','리전','리소스 ID','증빙','권고','AWS 지침']
+            keys = ['pillar_name','rule','title','severity','status','account','region','id','evidence','recommendation','source']
+            values = []
+            for f in selected:
+                row = []
+                for key in keys:
+                    text = stringify(f[key])
+                    if len(text) > 32000:
+                        text = '[일부 표시: 전체 증빙은 report.json 참조]\n' + text[:31000]
+                    row.append(text)
+                values.append(row)
+            write_table(sheet, headers, values, name)
+            sheet.set_column(0, 0, 27, wrap)
+            sheet.set_column(1, 1, 17, wrap)
+            sheet.set_column(2, 2, 37, wrap)
+            sheet.set_column(3, 4, 20, wrap)
+            sheet.set_column(5, 6, 21, wrap)
+            sheet.set_column(7, 7, 40, wrap)
+            sheet.set_column(8, 10, 70, wrap)
+            for rownum, f in enumerate(selected, 7):
+                width = len(stringify(f['evidence']))
+                sheet.set_row(rownum, min(409, max(88, 16 * (width // 65 + 2))))
+            if selected:
+                for status, fmt in [('FAIL',danger),('UNKNOWN',warning),('MANUAL',warning)]:
+                    sheet.conditional_format(7,4,6+len(selected),4,{'type':'cell','criteria':'equal to','value':'"'+status+'"','format':fmt})
         summary.activate()
         summary.set_first_sheet()
 
 
 def export_report(report, out):
+    # Keep the legacy arrays and collection status untouched; WAR is an additive snapshot.
+    report = dict(report, war=war.evaluate(report))
     out = Path(out).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
     folder = out / (datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6])
@@ -554,3 +607,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

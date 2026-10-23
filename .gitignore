@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+node_modules/
+reports/
+test-results.xml
+.pytest_cache/
