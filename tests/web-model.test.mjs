@@ -75,6 +75,7 @@ test('empty or auto region leaves detection to CloudShell at execution time',()=
   assert.throws(()=>M.cloudShellCommand('auto us-east-1','core',data.collector));
   assert.match(page,/cloudshell\/home"/);
   assert.ok(!page.includes('cloudshell/home?region=ap-northeast-2'));
+  assert.ok(!page.includes('서울 리전과 기본 범위로 시작'));
 });
 test('page retains CSP and local-file behavior; WAR uses safe text nodes',()=>{
   assert.match(page,/connect-src 'none'/);
