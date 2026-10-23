@@ -46,10 +46,18 @@ class CloudShellRegions(unittest.TestCase):
              patch.object(cloudshell.Path,'home',return_value=Path('mock-home')),\
              patch('boto3.Session',side_effect=factory) as constructor,\
              patch('builtins.input',return_value=reply),patch.object(cloudshell.checker,'scan',return_value={'status':'COMPLETE'}) as scan,\
-             patch.object(cloudshell.checker,'export_report',return_value=Path('mock-output/report')),\
+             patch.object(cloudshell.checker,'export_report',return_value=Path('mock-output/report')) as export,\
              patch.object(cloudshell.zipfile,'ZipFile'),contextlib.redirect_stdout(stream):
             result=cloudshell.main()
+        self.last_export=export
         return result,constructor,scan,observed_env,stream.getvalue()
+
+    def test_war_is_opt_in_and_forwarded_to_export(self):
+        for argv,enabled in (([],False),(['--war'],True)):
+            with self.subTest(enabled=enabled):
+                *_,output=self.invoke(argv,{'AWS_REGION':'eu-west-1'})
+                self.assertEqual(self.last_export.call_args.kwargs,{'include_war':enabled})
+                self.assertIn('포함' if enabled else '제외',output)
 
     def test_omitted_region_reaches_session_scan_and_confirmation(self):
         result,constructor,scan,_,output=self.invoke([],{'AWS_REGION':'eu-west-1'})

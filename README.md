@@ -21,9 +21,9 @@ collector/에는 일반 조회 수집기, CloudShell 실행기, 오프라인 WAR
 
 ## WAR 사전 진단 (1단계)
 
-현재 CloudShell 인증·수집 범위·서비스별 Excel을 유지하고, 기존 수집 증빙만 사용하는 WAR 평가를 추가했습니다. AWS API와 조회 권한은 추가하지 않습니다. 새 실행에서 생성한 report.json을 열고 **보고서 보기 → WAR 진단** 탭을 선택하세요. Pillar·상태·검색을 함께 사용할 수 있습니다.
+현재 CloudShell 인증·수집 범위·서비스별 Excel을 유지하고, 기존 수집 증빙만 사용하는 WAR 평가를 추가했습니다. AWS API와 조회 권한은 추가하지 않습니다. **조회 실행 → WAR 진단 포함**은 기본 꺼짐입니다. 필요한 스캔에서 켠 다음 새 명령어를 복사해 실행하세요. 끄면 규칙 엔진을 실행하지 않고 WAR JSON·HTML 항목·Excel 3개 시트를 생성하지 않습니다. 기존 리소스 점검과 서비스별 Excel은 계속 생성합니다. 켜고 실행해서 생성한 report.json을 열고 **보고서 보기 → WAR 진단** 탭을 선택하세요. Pillar·상태·검색을 함께 사용할 수 있습니다.
 
-- 기존 `resources`, `findings`, `coverage`, 수집 상태는 그대로 유지합니다. 새 `war` 항목에 schema_version=1, 규칙 버전, 평가 시각, 상태별 건수와 상세 결과가 추가됩니다.
+- 기존 `resources`, `findings`, `coverage`, 수집 상태는 그대로 유지합니다. WAR를 켠 경우 새 `war` 항목에 schema_version=1, 규칙 버전, 평가 시각, 상태별 건수와 상세 결과가 추가됩니다.
 - HTML에는 WAR 상세 결과가 추가됩니다. Excel에는 기존 서비스 시트·차트·내부 링크 뒤에 **WAR Summary / WAR Findings / WAR Manual**을 추가합니다. WAR Manual은 UNKNOWN과 MANUAL의 후속 확인 목록입니다.
 - 15개 리소스 규칙과 수집 오류 항목, 미수집 증빙 안내 5종, 6 Pillar 인터뷰 항목을 제공합니다. PASS는 관측 조건 충족, FAIL은 개선 검토 후보, UNKNOWN은 필드·수집 증빙 부족, MANUAL은 인터뷰 필요, NOT_APPLICABLE은 확인된 대상 없음입니다. 공식 WAR/HRI 판정이나 준수 점수를 산출하지 않습니다.
 - 기존 기본 점검 후보는 변경하지 않습니다. WAR 증빙에서 관련 기존 규칙을 연결하며, 기존 후보와 관측값이 충돌하면 PASS 대신 UNKNOWN입니다.
@@ -56,3 +56,5 @@ npm test
 
 Node 테스트의 linkedom은 개발 검증에만 사용합니다. 공개 페이지는 외부 JavaScript 라이브러리를 로드하지 않습니다. Python 테스트에는 AWS 신원·수집·기존 기본 규칙이 바뀌지 않았는지 확인하는 기준 커밋의 AST 지문과, 기존 서비스별 Excel 시트·차트 보존 검증이 포함됩니다. 테스트는 실제 AWS 계정에 연결하지 않습니다.
 
+
+명령줄에서도 `python collector/cloudshell.py --war` 또는 `python collector/checker.py --demo --war`로 포함합니다. `--war`를 생략하면 제외합니다. 생성된 JSON의 `war_enabled`에 실행 선택을 기록하며, 웹에서 선택을 바꾸어도 이미 만든 보고서는 바뀌지 않습니다.

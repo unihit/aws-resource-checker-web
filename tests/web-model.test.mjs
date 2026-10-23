@@ -13,6 +13,13 @@ const M=context.module.exports;
 const data=JSON.parse(page.match(/window\.CHECKER_DATA = (\{[^\n]+\});/)[1]);
 const clone=v=>JSON.parse(JSON.stringify(v));
 
+test('WAR command flag is opt-in with strict boolean input',()=>{
+  assert.ok(!M.cloudShellCommand('','core',data.collector).includes(' --war'));
+  assert.ok(!M.cloudShellCommand('','core',data.collector,false).includes(' --war'));
+  assert.ok(M.cloudShellCommand('','core',data.collector,true).includes("--scope 'core' --war"));
+  assert.throws(()=>M.cloudShellCommand('','core',data.collector,'false'));
+});
+
 test('legacy JSON keeps existing tables and explicitly lacks WAR',()=>{
   const r=clone(data.sample);delete r.war;
   assert.equal(M.parseReport(r),r);

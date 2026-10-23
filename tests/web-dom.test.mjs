@@ -102,3 +102,32 @@ test('default run command needs no region input; manual override and reset work'
   assert.ok(!$('command').value.includes('--regions'));
   assert.ok(!document.querySelector('a[href*="cloudshell/home"]').getAttribute('href').includes('?region='));
 });
+
+test('WAR is off by default; toggling updates command without changing an opened report',()=>{
+  const {document,$,window}=app();
+  assert.ok(!$('includeWar').hasAttribute('checked'));
+  assert.ok(!$('command').value.includes(' --war'));
+  $('includeWar').checked=true;
+  $('includeWar').dispatchEvent(new window.Event('change'));
+  assert.ok($('command').value.includes("--scope 'core' --war"));
+  $('loadDemoStart').click();
+  document.querySelector('[data-table="war"]').click();
+  const before=$('reportTable').textContent;
+  $('includeWar').checked=false;
+  $('includeWar').dispatchEvent(new window.Event('change'));
+  assert.ok(!$('command').value.includes(' --war'));
+  assert.equal($('reportTable').textContent,before);
+});
+
+test('WAR excluded snapshot shows exclusion and retains inventory',async()=>{
+  const {document,$,upload}=app();
+  const value=JSON.parse(JSON.stringify(data.sample));
+  value.war_enabled=false; // Even stale embedded results must not be shown.
+  await upload(value);
+  document.querySelector('[data-table="war"]').click();
+  assert.match($('warNotice').textContent,/끄고 실행/);
+  assert.equal($('warCounts').children.length,0);
+  assert.equal($('warPillar').disabled,true);
+  document.querySelector('[data-table="resources"]').click();
+  assert.equal($('reportTable').querySelectorAll('tbody tr').length,value.resources.length);
+});
