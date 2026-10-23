@@ -65,6 +65,17 @@ test('existing input validation and console authentication flow stay intact',()=
   assert.ok(command.includes('--regions \'all\' --scope \'full\''));
   assert.ok(!command.includes('AWS_ACCESS_KEY_ID='));
 });
+test('empty or auto region leaves detection to CloudShell at execution time',()=>{
+  for(const input of ['', '  ', 'auto']){
+    const command=M.cloudShellCommand(input,'core',data.collector);
+    assert.ok(!command.includes('--regions'));
+    assert.ok(command.includes('--scope \'core\''));
+    assert.ok(!command.includes('ap-northeast-2'));
+  }
+  assert.throws(()=>M.cloudShellCommand('auto us-east-1','core',data.collector));
+  assert.match(page,/cloudshell\/home"/);
+  assert.ok(!page.includes('cloudshell/home?region=ap-northeast-2'));
+});
 test('page retains CSP and local-file behavior; WAR uses safe text nodes',()=>{
   assert.match(page,/connect-src 'none'/);
   assert.match(page,/data-table="war"/);

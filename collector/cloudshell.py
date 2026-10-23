@@ -15,16 +15,29 @@ CORE = ['EC2', 'EBS', 'EIP', 'SecurityGroup', 'RDS', 'Aurora']
 
 def parse_regions(value):
     values = list(dict.fromkeys(re.split(r'[\s,]+', value.strip())))
-    if values == ['all']:
+    if values in (['all'], ['auto']):
         return values
     if not 1 <= len(values) <= 5 or any(not re.fullmatch(r'[a-z]{2}(?:-[a-z]+)+-\d+', v) for v in values):
         raise ValueError('리전은 최대 5개 또는 all 단독으로 입력하세요.')
     return values
 
 
+def current_region(environ=None):
+    environ = os.environ if environ is None else environ
+    region = (environ.get('AWS_REGION') or environ.get('AWS_DEFAULT_REGION') or '').strip()
+    if not re.fullmatch(r'[a-z]{2}(?:-[a-z]+)+-\d+', region):
+        raise ValueError('CloudShell 현재 리전을 감지하지 못했습니다. CloudShell 리전을 확인하거나 --regions ap-northeast-2처럼 직접 지정하세요.')
+    return region
+
+
+def resolve_regions(regions, environ=None):
+    return [current_region(environ)] if regions == ['auto'] else list(regions)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--regions', default='ap-northeast-2', type=parse_regions)
+    parser.add_argument('--regions', default='auto', type=parse_regions,
+                        help='기본 auto: CloudShell 현재 리전. 리전 목록 또는 all로 직접 지정 가능')
     parser.add_argument('--scope', choices=['core', 'full'], default='core')
     parser.add_argument('--demo', action='store_true')
     parser.add_argument('--out', default=str(Path.home() / 'aws-resource-checker-reports'))
@@ -32,6 +45,11 @@ def main():
     if args.demo:
         report = checker.demo()
     else:
+        try:
+            regions = resolve_regions(args.regions)
+            session_region = current_region() if regions == ['all'] else regions[0]
+        except ValueError as exc:
+            parser.error(str(exc))
         import boto3
         # Scope changes to this process. Keep CloudShell's credential-forwarding
         # variables intact; do not read legacy keys, profiles or web identity.
@@ -42,15 +60,17 @@ def main():
             os.environ.pop(name, None)
         os.environ['AWS_SHARED_CREDENTIALS_FILE'] = os.devnull
         os.environ['AWS_CONFIG_FILE'] = os.devnull
-        session = boto3.Session(region_name='ap-northeast-2')
+        session = boto3.Session(region_name=session_region)
         identity = session.client('sts').get_caller_identity()
         print('\n조회 대상 AWS 계정:', identity['Account'])
         print('현재 로그인 역할:', identity['Arn'])
-        print('조회 리전:', ', '.join(args.regions), '/ 범위:', args.scope)
+        print('조회 리전:', ', '.join(regions),
+              '(CloudShell 현재 리전 자동 감지)' if args.regions == ['auto'] else '(직접 지정)',
+              '/ 범위:', args.scope)
         if input('계정이 맞으면 Enter, 중단하려면 n 입력: ').strip():
             print('조회하지 않고 종료했습니다.')
             return 0
-        report = checker.scan(['cloudshell'], args.regions,
+        report = checker.scan(['cloudshell'], regions,
                               CORE if args.scope == 'core' else None,
                               session_factory=lambda **kwargs: session, use_env=True)
     folder = checker.export_report(report, args.out)
