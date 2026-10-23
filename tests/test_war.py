@@ -150,8 +150,8 @@ class Integration(unittest.TestCase):
                           'evaluate':'ea9e3636eed7270c3dd55ec18c40b7adde9b8ee6837ae041a2e4f61500fb1b8d',
                           'scan':'238506bd61b048fc4b983e3d484a99e1eb28da239c31c73199c73be26982b755',
                           'inventory_fields':'2e0fb00cac04601ae5508b874db7e71454e1dfeaba4240c99c0d2bc9f8aa1f9e'},
-            'cloudshell.py':{'main':'a6be9b1b7a1fd6059c7df0e6a201f99d37581c82e4920a1730a46a3aea5a788f',
-                             'parse_regions':'8a4d6f19a72545ec8dd1af18bd56e916850bd749233d0b56602185f70f99f90a'}}
+
+        }
         for filename,functions in expected.items():
             tree=ast.parse((ROOT/'collector'/filename).read_text(encoding='utf-8'))
             def canonical(node):

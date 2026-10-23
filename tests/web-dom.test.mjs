@@ -91,3 +91,14 @@ test('newly opened report resets filters and reloads correct counts',()=>{
   assert.equal($('warPillar').value,'');assert.equal($('warStatus').value,'');
   assert.equal($('reportTable').querySelectorAll('tbody tr').length,data.sample.war.findings.length);
 });
+test('default run command needs no region input; manual override and reset work',()=>{
+  const {document,$,window}=app();
+  assert.equal($('regions').value,'');
+  assert.ok(!$('command').value.includes('--regions'));
+  assert.equal($('copyRun').disabled,false);
+  $('regions').value='us-west-2';$('regions').dispatchEvent(new window.Event('input'));
+  assert.ok($('command').value.includes("--regions 'us-west-2'"));
+  $('regions').value='';$('regions').dispatchEvent(new window.Event('input'));
+  assert.ok(!$('command').value.includes('--regions'));
+  assert.ok(!document.querySelector('a[href*="cloudshell/home"]').getAttribute('href').includes('?region='));
+});
