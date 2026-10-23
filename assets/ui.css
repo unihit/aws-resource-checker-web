@@ -208,13 +208,15 @@ td pre{max-width:390px;padding:12px;white-space:pre-wrap;background:#f3f5fb;bord
 .war-counts .FAIL strong{color:#b45d65}.war-counts .UNKNOWN strong,.war-counts .MANUAL strong{color:#9d803e}.war-counts .PASS strong{color:#508b70}
 .war-pillars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .war-pillar{padding:16px;border:1px solid #e7eaf2;border-radius:9px;background:#fff}
-.war-pillar b{display:block;min-height:21px;font-size:12px;font-weight:600;color:#53627d}
-.war-pillar p{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 10px;margin:13px 0 0;padding-top:12px;border-top:1px solid #edf0f6;color:#8994a8;font-size:9px;font-variant-numeric:tabular-nums}
+.war-pillar b{display:block;min-height:21px;font-size:13px;font-weight:600;color:#53627d}
+.war-pillar p{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 10px;margin:13px 0 0;padding-top:12px;border-top:1px solid #edf0f6;color:#768196;font-size:10px;font-variant-numeric:tabular-nums}
 .war-pillar p span{display:flex;flex-direction:column;gap:2px}
 .war-pillar p strong{color:#63718d;font-size:13px;font-weight:600}
 .war-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;max-width:550px;margin:23px 0 0}
 .war-filters label{display:flex;flex-direction:column;gap:7px;font-size:11px;color:#6d7990;font-weight:550}
 .war-filters select{width:100%;min-width:0;min-height:40px;padding:8px 10px;border:1px solid #dde3ee;border-radius:7px;background:#fafbfe;color:#59677f;font-size:11px}
+#warPanel:not([hidden])+.table-scroll table{min-width:1680px}
+#warPanel:not([hidden])+.table-scroll :is(td,th):nth-child(6),#warPanel:not([hidden])+.table-scroll :is(td,th):nth-child(7),#warPanel:not([hidden])+.table-scroll :is(td,th):nth-child(8){white-space:nowrap;min-width:145px}
 footer{display:flex;justify-content:space-between;gap:20px;margin-top:34px;padding:20px 0;border-top:1px solid var(--line);color:#9aa3b3;font-size:10px}
 .toast{position:fixed;bottom:24px;left:calc(50% + 112px);transform:translateX(-50%);max-width:calc(100vw - 32px);padding:13px 20px;border-radius:10px;background:#29354e;color:#fff;box-shadow:0 8px 32px #172c4420;font-size:12px;z-index:100}
 dialog{width:min(720px,calc(100vw - 32px));padding:28px;border:1px solid var(--line);border-radius:16px;background:#fff;color:var(--ink)}
