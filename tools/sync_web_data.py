@@ -20,6 +20,7 @@ def sync():
     match = matches[0]
     data = json.loads(match.group(1))
     data['sample']['war'] = war.evaluate(data['sample'])
+    data['sample']['war_enabled'] = True
     data['collector'] = {name:hashlib.sha256((ROOT / 'collector' / name).read_bytes()).hexdigest()
                          for name in ('checker.py','cloudshell.py','war.py')}
     encoded = json.dumps(data,ensure_ascii=False).replace('<','\\u003c')

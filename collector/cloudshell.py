@@ -40,6 +40,7 @@ def main():
                         help='기본 auto: CloudShell 현재 리전. 리전 목록 또는 all로 직접 지정 가능')
     parser.add_argument('--scope', choices=['core', 'full'], default='core')
     parser.add_argument('--demo', action='store_true')
+    parser.add_argument('--war', action='store_true', help='WAR 사전 진단 포함 (기본 제외)')
     parser.add_argument('--out', default=str(Path.home() / 'aws-resource-checker-reports'))
     args = parser.parse_args()
     if args.demo:
@@ -67,13 +68,14 @@ def main():
         print('조회 리전:', ', '.join(regions),
               '(CloudShell 현재 리전 자동 감지)' if args.regions == ['auto'] else '(직접 지정)',
               '/ 범위:', args.scope)
+        print('WAR 사전 진단:', '포함' if args.war else '제외')
         if input('계정이 맞으면 Enter, 중단하려면 n 입력: ').strip():
             print('조회하지 않고 종료했습니다.')
             return 0
         report = checker.scan(['cloudshell'], regions,
                               CORE if args.scope == 'core' else None,
                               session_factory=lambda **kwargs: session, use_env=True)
-    folder = checker.export_report(report, args.out)
+    folder = checker.export_report(report, args.out, include_war=args.war)
     archive = folder.with_suffix('.zip')
     with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as output:
         for name in ('report.html', 'report.json', 'report.xlsx'):

@@ -168,7 +168,7 @@ class Integration(unittest.TestCase):
         from openpyxl import load_workbook
         r=checker.demo();original=deepcopy(r)
         with TemporaryDirectory() as directory:
-            folder=checker.export_report(r,directory)
+            folder=checker.export_report(r,directory,include_war=True)
             saved=json.loads((folder/'report.json').read_text(encoding='utf-8'))
             self.assertEqual(r,original)
             for key in ('resources','findings','coverage','status'):
@@ -183,6 +183,26 @@ class Integration(unittest.TestCase):
             self.assertEqual(workbook['WAR Findings'].max_row,7+len(saved['war']['findings']))
             self.assertIn('WAR 사전 진단',(folder/'report.html').read_text(encoding='utf-8'))
 
+    def test_disabled_war_skips_engine_and_removes_stale_results(self):
+        from openpyxl import load_workbook
+        r=checker.demo()
+        r['war']=war.evaluate(r)
+        original=deepcopy(r)
+        with TemporaryDirectory() as directory, patch.object(war,'evaluate') as engine:
+            folder=checker.export_report(r,directory)
+            engine.assert_not_called()
+            saved=json.loads((folder/'report.json').read_text(encoding='utf-8'))
+            self.assertIs(saved['war_enabled'],False)
+            self.assertNotIn('war',saved)
+            self.assertEqual(r,original)
+            for key in ('resources','findings','coverage','status'):
+                self.assertEqual(saved[key],r[key])
+            self.assertNotIn('WAR 사전 진단',(folder/'report.html').read_text(encoding='utf-8'))
+            book=load_workbook(folder/'report.xlsx')
+            self.assertEqual(book.sheetnames,['Summary','EBS','RDS','SecurityGroup','EKS','Findings','Coverage','Inventory'])
+            self.assertEqual(len(book['Summary']._charts),1)
+            self.assertFalse(any(cell.hyperlink and 'WAR' in str(cell.hyperlink.location) for row in book['Summary'] for cell in row))
+
     def test_excel_html_literal_text(self):
         from openpyxl import load_workbook
         r=snapshot(data={'Encrypted':False})
@@ -191,7 +211,7 @@ class Integration(unittest.TestCase):
         r['resources'][0]['details']['Attachments']=[]
         r['resources'][0]['name']='<script>alert(1)</script>'
         with TemporaryDirectory() as directory:
-            folder=checker.export_report(r,directory)
+            folder=checker.export_report(r,directory,include_war=True)
             workbook=load_workbook(folder/'report.xlsx')
             self.assertEqual(workbook['EBS']['C8'].data_type,'s')
             self.assertEqual(workbook['WAR Findings']['H8'].data_type,'s')
@@ -208,6 +228,7 @@ class Integration(unittest.TestCase):
 
     def test_offline_cli_preserves_source(self):
         r=checker.demo()
+        r['war_enabled']=False
         with TemporaryDirectory() as directory:
             before=Path(directory)/'before.json';after=Path(directory)/'after.json'
             before.write_text(json.dumps(r),encoding='utf-8')
@@ -215,6 +236,7 @@ class Integration(unittest.TestCase):
                 war.main()
             self.assertEqual(json.loads(before.read_text(encoding='utf-8')),r)
             self.assertIn('war',json.loads(after.read_text(encoding='utf-8')))
+            self.assertIs(json.loads(after.read_text(encoding='utf-8'))['war_enabled'],True)
 
 
 if __name__=='__main__':

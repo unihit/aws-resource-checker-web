@@ -276,6 +276,7 @@ def main():
     if args.input.resolve() == args.out.resolve():
         parser.error('입력과 다른 출력 경로를 지정하세요.')
     report['war'] = evaluate(report)
+    report['war_enabled'] = True
     args.out.write_text(json.dumps(report,ensure_ascii=False,indent=2,default=str),encoding='utf-8')
 
 
